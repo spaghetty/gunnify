@@ -14,7 +14,7 @@ src/github.com/mattn:
 src/github.com/spaghetty/udev:
 	GOPATH=`pwd`; go get github.com/spaghetty/udev
 clean:
-	echo merda
+	rm gunnify
 
 # rpm: static templates mailproxy mainweb proxymail.conf.example webconf.cfg.example
 # 	ln -s . mastermanager-${VERSION}
