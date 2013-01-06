@@ -1,8 +1,10 @@
 package main
 
 import (
+	"os"
 	"fmt"
 	"time"
+	"strconv"
 	"github.com/mattn/go-gtk/gtk"
 	"github.com/mattn/go-gtk/gdk"
 	"github.com/mattn/go-gtk/glib"
@@ -13,7 +15,7 @@ var USB_VENDOR_ID_LOGITECH string = "046d"
 var USB_DEVICE_ID_UNIFYING_RECEIVER string = "c52b"
 var USB_DEVICE_ID_UNIFYING_RECEIVER_2 string = "c532"
 
-var magic_sequence = [...]uint8{0x10, 0xFF, 0x80, 0xB2, 0x01, 0x00, 0x00}
+var magic_sequence = []byte{0x10, 0xFF, 0x80, 0xB2, 0x01, 0x00, 0x00}
 
 type Gui struct {
 	MainWindow *gtk.Window
@@ -29,11 +31,9 @@ var MainGui Gui;
 func SearchValid() []udev.Device {
 	u := udev.NewUdev()
         defer u.Unref()
-	
-	fmt.Println("cool")
+
         e := u.NewEnumerate()
         defer e.Unref()
-	fmt.Println("cool1")
 
         e.AddMatchSubsystem("hidraw")
         err := e.ScanDevices()
@@ -44,6 +44,7 @@ func SearchValid() []udev.Device {
 	
         for device := e.First(); !device.IsNil(); device = device.Next() {
                 path := device.Name()
+		//fmt.Println(path)
                 dev := u.DeviceFromSysPath(path)
 		dev = dev.ParentWithSubsystemDevType("usb", "usb_device")
 		if ( dev.SysAttrValue("idVendor")==USB_VENDOR_ID_LOGITECH && 
@@ -52,6 +53,7 @@ func SearchValid() []udev.Device {
 			fmt.Println(dev.DevType(), dev.DevNum(), dev.SysAttrValue("product"))
 			if _, ok :=devices[dev.DevNum()]; !ok {
 				devices[dev.DevNum()] = dev
+				fmt.Println(dev.SeqNum(), dev.DevNode())
 			}
 		}
 		
@@ -60,9 +62,24 @@ func SearchValid() []udev.Device {
 	for _, v := range devices {
 		dlist = append(dlist, v)
 	}
-	fmt.Println("merda qua arriva")
 	time.Sleep(1 * time.Millisecond)
 	return dlist
+}
+
+func doWrite(d string) bool {
+	f, err := os.OpenFile(d, os.O_WRONLY|os.O_SYNC,500)
+	if err!=nil {
+		MainGui.notify("Some error opening the file")
+		return false
+	}
+	defer f.Close()
+	_, err = f.Write(magic_sequence)
+	if err!=nil {
+		MainGui.notify("Some error writing to the file, "+ err.Error())
+		return false
+	}
+	MainGui.notify("Ready to sync try to turn off and then on the desidered device")
+	return true
 }
 
 func (g *Gui)buildList(vbox *gtk.VBox) {
@@ -88,11 +105,11 @@ func (g *Gui)buildList(vbox *gtk.VBox) {
 		if selection.CountSelectedRows() > 0 {
 			selection.GetSelected(&iter)
 			g.Store.GetValue(&iter, 0, &device)
-			MainGui.Status.Push(0, "Start Writing On: "+device.GetString())
+			MainGui.notify("Start Writing On: "+device.GetString())
+			doWrite(device.GetString())
 		} else {
-			MainGui.Status.Push(0, "No Active Selection")
+			MainGui.notify("No Active Selection")
 		}
-		time.AfterFunc(1000*time.Millisecond, msgPop)
 	})
 	controls.Add(g.Start)
 	g.Recheck = gtk.NewButtonWithLabel("Rescan")
@@ -100,17 +117,19 @@ func (g *Gui)buildList(vbox *gtk.VBox) {
 		devices := SearchValid()
 		MainGui.Store.Clear()
 		for _, x := range devices {
-			MainGui.appendItem(x.DevNode(), x.SysAttrValue("product"))
+			MainGui.appendItem("/dev/hidraw"+strconv.FormatUint(x.SeqNum(),10), x.SysAttrValue("product"))
 		}
-		MainGui.Status.Push(0, "Scanning Done")
-		time.AfterFunc(1000*time.Millisecond, msgPop)
+		MainGui.notify("Scanning Done")
 	})
 	controls.Add(g.Recheck)
 	framebox.PackStart(controls, false, false,0)
 }
 
-func msgPop() {
-	MainGui.Status.Pop(0)
+func (g *Gui)notify(s string) {
+	g.Status.Push(0, s)
+	time.AfterFunc(1000*time.Millisecond, func () {
+		g.Status.Pop(0)
+	})
 }
 
 func (g *Gui)buildGUI() {
@@ -143,7 +162,7 @@ func (g *Gui)appendItem(name, descr string) {
 func unlinked_main() {
 	devices := SearchValid()
 	for _, x := range devices {
-		MainGui.appendItem(x.DevNode(), x.SysAttrValue("product"))
+		MainGui.appendItem("/dev/hidraw"+strconv.FormatUint(x.SeqNum(),10), x.SysAttrValue("product"))
 	}
 	/////////// THIS IS JUST FOR DEBUG PURPOSE //////////////
 	//MainGui.appendItem("prova1", "prova 123")
