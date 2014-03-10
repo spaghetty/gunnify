@@ -1,0 +1,5 @@
+==Install dependencies on fedora==
+
+pango-devel
+gtk2-devel
+systemd-devel
